@@ -6,6 +6,8 @@ require('dotenv').config();
 const botToken = process.env.BOT_TOKEN;
 const chatId = process.env.BOT_CHAT_ID;
 const raveOSToken = process.env.RAVEOS_TOKEN;
+const poolWallet = process.env.POOL_WALLET
+
 
 //Sanity check for env variables
 assert(/^[0-9]+:[a-zA-Z0-9_-]{35}$/.test(botToken), "Telergam bot token is invalid: \"" + botToken + "\" Check BOT_TOKEN env.");
@@ -14,7 +16,7 @@ assert(/^[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-f
 
 const bot = new Telegraf(botToken)
 
-async function requestPath(apiPath) {
+async function raveOSApiRequest(apiPath) {
     var optionsGet = {
         headers: {
             "X-Auth-Token": raveOSToken,
@@ -38,11 +40,40 @@ async function requestPath(apiPath) {
                 })
             });
     });
+}
 
+async function poolApiRequest(apiPath) {
+    var optionsGet = {
+        headers: {},
+        host: "eth.2miners.com",
+        path: apiPath,
+        method: 'GET'
+    };
+    return new Promise(function (resolve, reject) {
+        https
+            .get(optionsGet, response => {
+                let str = '';
+                response.on('data', function (chunk) {
+                    str += chunk;
+                });
+                response.on('end', function () {
+                    resolve(JSON.parse(str));
+                });
+                response.on("error", () => {
+                    reject();
+                })
+            });
+    });
+}
+
+async function getAccountInfo(wallet) {
+    let rsp = await poolApiRequest("/api/accounts/" + wallet);
+
+    return rsp;
 }
 
 async function getWorkerInfo(workerId) {
-    let rsp = await requestPath("/v1/get_worker_info/" + workerId);
+    let rsp = await raveOSApiRequest("/v1/get_worker_info/" + workerId);
 
     return rsp;
 }
@@ -66,23 +97,55 @@ function workerToStr(worker) {
 }
 
 async function getWorkers() {
-    let rsp = await requestPath("/v1/get_workers/");
+    let rsp = await raveOSApiRequest("/v1/get_workers/");
     console.log(rsp);
     let workerDescrList = rsp.workers;
 
     workerDescrList.forEach(async (workerDescr) => {
         let worker = await getWorkerInfo(workerDescr.id);
         //console.log(workerToStr(worker));
-        let uptimeH = Math.floor(workerDescr.uptime/(60*60));
-        let uptimeM = Math.floor((workerDescr.uptime - uptimeH*60*60)/60);
-        let uptimeStr = " " + uptimeH + "h " +  uptimeM + "m ";
-        bot.telegram.sendMessage(chatId, (workerDescr.hashrate / 1000000).toFixed(1) + "MH/s " + uptimeStr + workerToStr(worker), { disable_web_page_preview: true, parse_mode: "Markdown" });
+        let uptimeH = Math.floor(workerDescr.uptime / (60 * 60));
+        let uptimeM = Math.floor((workerDescr.uptime - uptimeH * 60 * 60) / 60);
+        let uptimeStr = " " + uptimeH + "h " + uptimeM + "m ";
+        bot.telegram.sendMessage(chatId,
+            (workerDescr.hashrate / 1000000).toFixed(1) + "MH/s " + uptimeStr + workerToStr(worker),
+            { disable_web_page_preview: true, parse_mode: "Markdown" });
     });
 
 }
 
+async function getPoolInfo() {
+    const REWARD_24H = 2;
+    let rsp = await getAccountInfo(poolWallet);
+    let stats = rsp.stats;
+    let ethToStr = (eth) => { return (eth / 1000000000).toFixed(6) };
+    let workers = rsp.workers;
+
+    let workersStr = "Workers: \n";
+
+    for (var worker in workers) {
+        if (workers.hasOwnProperty(worker)) {
+            workersStr += `${worker}: 💎${(workers[worker].hr / 1000000).toFixed(1)}\n`;
+        }
+    }
+
+    bot.telegram.sendMessage(chatId,
+        `💲⏳${ethToStr(stats.balance)} \n\n` +
+        `💲24h: ${ethToStr(rsp.sumrewards[REWARD_24H].reward)}\n` +
+        `💎 ${(rsp.hashrate / 1000000).toFixed(1)}MH/s\n\n` +
+        workersStr,
+        { disable_web_page_preview: true, parse_mode: "Markdown" });
+}
+
+
+
+/* Bot commands */
 bot.command('rave', (ctx) => {
     getWorkers()
+});
+
+bot.command('pool', (ctx) => {
+    getPoolInfo();
 });
 
 bot.launch()
