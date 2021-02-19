@@ -73,7 +73,10 @@ async function getWorkers() {
     workerDescrList.forEach(async (workerDescr) => {
         let worker = await getWorkerInfo(workerDescr.id);
         //console.log(workerToStr(worker));
-        bot.telegram.sendMessage(chatId, (workerDescr.hashrate / 1000000) + "MH/s " + workerToStr(worker), { disable_web_page_preview: true, parse_mode: "Markdown" });
+        let uptimeH = Math.floor(workerDescr.uptime/(60*60));
+        let uptimeM = Math.floor((workerDescr.uptime - uptimeH*60*60)/60);
+        let uptimeStr = " " + uptimeH + "h " +  uptimeM + "m ";
+        bot.telegram.sendMessage(chatId, (workerDescr.hashrate / 1000000).toFixed(1) + "MH/s " + uptimeStr + workerToStr(worker), { disable_web_page_preview: true, parse_mode: "Markdown" });
     });
 
 }
