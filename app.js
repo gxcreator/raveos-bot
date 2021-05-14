@@ -66,6 +66,36 @@ async function poolApiRequest(apiPath) {
     });
 }
 
+async function currencyApiRequest(apiPath) {
+    var optionsGet = {
+        headers: {},
+        host: "min-api.cryptocompare.com",
+        path: apiPath,
+        method: 'GET'
+    };
+    return new Promise(function (resolve, reject) {
+        https
+            .get(optionsGet, response => {
+                let str = '';
+                response.on('data', function (chunk) {
+                    str += chunk;
+                });
+                response.on('end', function () {
+                    resolve(JSON.parse(str));
+                });
+                response.on("error", () => {
+                    reject();
+                })
+            });
+    });
+}
+
+async function getCurrencyInfo() {
+    let rsp = await currencyApiRequest("/data/price?fsym=ETH&tsyms=USD,RUB");
+
+    return rsp;
+}
+
 async function getAccountInfo(wallet) {
     let rsp = await poolApiRequest("/api/accounts/" + wallet);
 
@@ -116,7 +146,10 @@ async function getWorkers() {
 
 async function getPoolInfo() {
     const REWARD_24H = 2;
+    const REWARD_1H = 0;
     let rsp = await getAccountInfo(poolWallet);
+    let currencyRsp = await getCurrencyInfo();
+    //console.dir(currRsp);
     let stats = rsp.stats;
     let ethToStr = (eth) => { return (eth / 1000000000).toFixed(6) };
     let workers = rsp.workers;
@@ -125,15 +158,19 @@ async function getPoolInfo() {
 
     for (var worker in workers) {
         if (workers.hasOwnProperty(worker)) {
-            workersStr += `${worker}: 💎${(workers[worker].hr / 1000000).toFixed(1)}\n`;
+            workersStr += `💎${(workers[worker].hr / 1000000).toFixed(1)} ${worker}\n`;
         }
     }
 
+    let currencyStr = `ETH = $${currencyRsp.USD.toFixed(0)} = ₽${currencyRsp.RUB.toFixed(0)}\n`;
+
     bot.telegram.sendMessage(chatId,
-        `💲⏳${ethToStr(stats.balance)} \n\n` +
-        `💲24h: ${ethToStr(rsp.sumrewards[REWARD_24H].reward)}\n` +
+        `💰⏳${ethToStr(stats.balance)} = $${((stats.balance / 1000000000) * currencyRsp.USD).toFixed(1)} \n\n` +
+        `⏳1h:  ${ethToStr(rsp.sumrewards[REWARD_1H].reward)}\n` +
+        `⏳24h: ${ethToStr(rsp.sumrewards[REWARD_24H].reward)}\n` +
         `💎 ${(rsp.hashrate / 1000000).toFixed(1)}MH/s\n\n` +
-        workersStr,
+        workersStr + "\n" +
+        currencyStr,
         { disable_web_page_preview: true, parse_mode: "Markdown" });
 }
 
@@ -153,3 +190,6 @@ bot.launch()
 // Enable graceful stop
 process.once('SIGINT', () => bot.stop('SIGINT'))
 process.once('SIGTERM', () => bot.stop('SIGTERM'))
+
+
+//https://min-api.cryptocompare.com/data/price?fsym=ETH&tsyms=USD,RUB
